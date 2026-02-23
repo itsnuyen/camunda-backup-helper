@@ -39,18 +39,23 @@ func Cleanup() ([]string, error) {
 		return []string{}, nil
 	}
 
-	itemsDeleted := []string{}
+	itemsToDelete := mergedBackups[maxKeepItems:]
+
 	// ignore the first item and start with the second item, as the first item is the latest backup which we want to keep
-	for i := 1; i < len(mergedBackups); i++ {
-		backup := mergedBackups[i]
+	for i := range itemsToDelete {
+		backup := itemsToDelete[i]
 		DeleteBackup("backupRuntime", int64(backup.BackupId))
 		DeleteBackup("backupHistory", int64(backup.BackupId))
-		itemsDeleted = append(itemsDeleted, fmt.Sprintf("Deleted backup with ID %d", backup.BackupId))
 		log.Printf("Deleted backup with ID %d", backup.BackupId)
 	}
 
-	log.Printf("Cleanup completed, deleted %d old backup items", len(itemsDeleted))
-	return itemsDeleted, nil
+	log.Printf("Cleanup completed, deleted %d old backup items", len(itemsToDelete))
+	deletedIds := []string{}
+	for _, backup := range itemsToDelete {
+		log.Printf("Deleted backup ID: %d, State: %s", backup.BackupId, backup.State)
+		deletedIds = append(deletedIds, fmt.Sprintf("%d", backup.BackupId))
+	}
+	return deletedIds, nil
 }
 
 func mergeAndSortBackups(zeebeBackups, camundaBackups []domain.BackupStatusResponse) []domain.BackupStatusResponse {

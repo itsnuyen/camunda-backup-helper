@@ -11,7 +11,7 @@ import (
 	"github.com/itsnuyen/camunda-backup-helper/internal/domain"
 )
 
-func GetMergedBackupHistory() ([]domain.BackupStatusResponse, error) {
+func GetMergedBackupHistory() ([]domain.BackupStatusResponseMerged, error) {
 	webappHistory, err := GetBackupHistory(false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get webapp backup history: %w", err)
@@ -23,7 +23,14 @@ func GetMergedBackupHistory() ([]domain.BackupStatusResponse, error) {
 	}
 
 	mergedHistory := mergeAndSortBackups(webappHistory, zeebeHistory)
-	return mergedHistory, nil
+	mergedHistoryMerged := make([]domain.BackupStatusResponseMerged, len(mergedHistory))
+	for i, backup := range mergedHistory {
+		mergedHistoryMerged[i] = domain.BackupStatusResponseMerged{
+			BackupId: backup.BackupId,
+			State:    backup.State,
+		}
+	}
+	return mergedHistoryMerged, nil
 }
 
 func GetBackupHistory(isRuntimeData bool) ([]domain.BackupStatusResponse, error) {

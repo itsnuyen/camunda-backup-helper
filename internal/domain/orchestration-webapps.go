@@ -1,5 +1,7 @@
 package domain
 
+import "encoding/json"
+
 type Snapshot struct {
 	ID        string
 	Timestamp int64
@@ -21,6 +23,12 @@ type CreateBackupResponse struct {
 }
 
 type BackupStatusResponse struct {
+	BackupId int             `json:"backupId"`
+	State    string          `json:"state"`
+	Details  json.RawMessage `json:"details,omitempty"`
+}
+
+type BackupStatusResponseMerged struct {
 	BackupId int    `json:"backupId"`
 	State    string `json:"state"`
 }

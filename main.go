@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	simpleTest()
+	// simpleTest()
 	server.StartServer()
 }
 
@@ -64,6 +64,11 @@ func simpleTest() {
 	log.Printf("Amount of data: %i\n", len(mergedData))
 
 	log.Printf("Merged and sorted backup data: %+v\n", mergedData)
+
+	mynewData := mergedData[1:]
+
+	log.Printf("mynewData: %+v\n", mynewData)
+
 }
 
 func mergeAndSortBackups(zeebeBackups, camundaBackups []domain.BackupStatusResponse) []domain.BackupStatusResponse {
@@ -71,5 +76,20 @@ func mergeAndSortBackups(zeebeBackups, camundaBackups []domain.BackupStatusRespo
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].BackupId > merged[j].BackupId
 	})
-	return merged
+
+	return removeDuplicates(merged)
+}
+
+func removeDuplicates(backups []domain.BackupStatusResponse) []domain.BackupStatusResponse {
+	seen := make(map[int64]bool)
+	result := []domain.BackupStatusResponse{}
+
+	for _, b := range backups {
+		if !seen[int64(b.BackupId)] {
+			seen[int64(b.BackupId)] = true
+			result = append(result, b)
+		}
+	}
+
+	return result
 }
