@@ -17,8 +17,8 @@ func init() {
 
 func StartServer() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
-		responseMap := map[string]string{"key": "value"}
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		responseMap := map[string]string{"health": "up"}
 		responseJSON, err := json.Marshal(responseMap)
 		if err != nil {
 			http.Error(w, "Failed to marshal response", http.StatusInternalServerError)

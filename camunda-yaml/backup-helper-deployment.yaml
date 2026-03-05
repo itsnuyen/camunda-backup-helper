@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: camunda-backup-helper
+  labels:
+    app: camunda-backup-helper
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: camunda-backup-helper
+  template:
+    metadata:
+      labels:
+        app: camunda-backup-helper
+    spec:
+      containers:
+        - name: camunda-backup-helper
+          image: itsnuyen/camunda-backup-helper:0.0.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          env:
+            - name: SECONDARYSTORAGE_URL
+              value: "http://camunda-elasticsearch:9200"
+            - name: OPTIMIZE_URL
+              value: "http://camunda-optimize:8092"
+            - name: ORCHESTRATION_URL
+              value: "http://camunda-zeebe-gateway:9600/core"
+            - name: SNAPSHOT_OPTIMIZE_REPO
+              value: "optimize-backup"
+            - name: SNAPSHOT_CAMUNDA_REPO
+              value: "camunda-backup"
+            - name: SNAPSHOT_ZEEBE_REPO
+              value: "zeebe-backup"
+            - name: SNAPSHOT_REPOSITORY
+              value: "azure"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: KEEP_BACKUP_ITEMS
+              value: "1"

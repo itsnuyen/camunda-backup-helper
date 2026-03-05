@@ -44,13 +44,15 @@ func historyHandlerZeebe(w http.ResponseWriter, r *http.Request) {
 }
 
 func createCamundaBackupHandler(w http.ResponseWriter, r *http.Request) {
-
+	orchestration.PauseZeebeExport()
 	backupId, err := orchestration.PerformBackup()
 	if err != nil {
 		log.Printf("Error performing backup: %v", err)
+		orchestration.ResumeZeebeExport()
 		http.Error(w, fmt.Sprintf("Failed to perform backup: %v", err), http.StatusInternalServerError)
 		return
 	}
+	orchestration.ResumeZeebeExport()
 
 	responseMap := map[string]string{"backup": fmt.Sprint(backupId)}
 	responseJSON, err := json.Marshal(responseMap)

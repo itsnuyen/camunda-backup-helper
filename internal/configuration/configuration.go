@@ -27,13 +27,13 @@ type BackupHelperConfig struct {
 func LoadConfig() (*BackupHelperConfig, error) {
 	config := &BackupHelperConfig{
 		SecondarystorageUrl:  getEnvOrDefault("SECONDARYSTORAGE_URL", "http://localhost:9200"),
-		OptimizeUrl:          getEnvOrDefault("OPTIMIZE_URL", "http://localhost:9600"),
-		OrchestrationUrl:     getEnvOrDefault("ORCHESTRATION_URL", "http://localhost:9600"),
+		OptimizeUrl:          getEnvOrDefault("OPTIMIZE_URL", "http://localhost:8092"),
+		OrchestrationUrl:     getEnvOrDefault("ORCHESTRATION_URL", "http://localhost:9600/core"),
 		SnapshotOptimizeRepo: getEnvOrDefault("SNAPSHOT_OPTIMIZE_REPO", "optimize-backup"),
 		SnapshotCamundaRepo:  getEnvOrDefault("SNAPSHOT_CAMUNDA_REPO", "camunda-backup"),
 		SnapshotZeebeRepo:    getEnvOrDefault("SNAPSHOT_ZEEBE_REPO", "zeebe-backup"),
 		SnapshotRepository:   getEnvOrDefault("SNAPSHOT_REPOSITORY", "azure"),
-		Serverport:           getEnvOrDefault("SERVER_PORT", "8081"),
+		Serverport:           getEnvOrDefault("SERVER_PORT", "8080"),
 		KeepBackUpItems:      getEnvOrDefault("KEEP_BACKUP_ITEMS", "1"),
 	}
 	Config = config

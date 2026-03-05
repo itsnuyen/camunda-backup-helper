@@ -18,9 +18,14 @@ func PerformBackup() (int64, error) {
 	// need to perform the backup here
 
 	backupId := generateBackupID()
-
-	PauseZeebeExport()
-
+	
+	if err := CreateOptimizeBackup(backupId); err != nil {
+		return 0, fmt.Errorf("failed to create optimize backup: %w", err)
+	}
+	time.Sleep(time.Duration(2 * time.Second))
+	if err := WaitForOptimizeBackupCompletion(backupId); err != nil {
+		return 0, fmt.Errorf("optimize backup did not complete successfully: %w", err)
+	}
 	if err := CreateBackup(backupId, false); err != nil {
 		return 0, fmt.Errorf("failed to create backup webapps: %w", err)
 	}
@@ -39,8 +44,6 @@ func PerformBackup() (int64, error) {
 	if err := WaitForBackupRuntimeCompletion(backupId); err != nil {
 		return 0, fmt.Errorf("backup zeebe runtime did not complete successfully: %w", err)
 	}
-
-	ResumeZeebeExport()
 
 	return backupId, nil
 }
