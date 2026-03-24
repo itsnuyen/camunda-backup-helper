@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: camunda-es-snapshot-minio-job
+  labels:
+    type: camunda-backup-restore
+spec:
+  template:
+    spec:
+      containers:
+      - name: es-snapshot
+        image: curlimages/curl
+        env:
+          - name: ELASTIC_ENDPOINT
+            value: "elasticsearch-es-http:9200"
+          - name: SNAPSHOT_REPOSITORIES
+            value: "optimize-backup camunda-backup webapp-backup minh-prod300"
+          - name: MINIO_ENDPOINT
+            value: "minio:9000"
+          - name: MINIO_BUCKET
+            value: "camunda"
+          - name: ELASTIC_USERNAME
+            value: "elastic"
+          - name: ELASTIC_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: elasticsearch-es-elastic-user
+                key: elastic
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          #!/bin/sh
+          set -e
+
+          # Define base paths
+          basePaths=$SNAPSHOT_REPOSITORIES
+          
+          # Define bucket name
+          bucket=$MINIO_BUCKET
+
+          # MinIO specific settings
+          endpoint=$MINIO_ENDPOINT
+
+
+          echo build auth header for MinIO
+          # Build the authorization header for MinIO using the root user credentials
+          authHeader=$(echo -n "$ELASTIC_USERNAME:$ELASTIC_PASSWORD" | base64)
+          # Iterate over each bucket name to register it as a snapshot repository without specifying access and secret keys
+          
+          for basePath in $basePaths; do
+            body=$(printf '{
+              "type": "s3",
+              "settings": {
+                "bucket": "%s",
+                "endpoint": "%s",
+                "protocol": "http",
+                "compress": true,
+                "client": "default",
+                "path_style_access": true,
+                "base_path": "%s"
+              }
+            }' "$bucket" "$endpoint" "$basePath")
+            echo "curl --fail -X PUT \"http://$ELASTIC_ENDPOINT/_snapshot/$basePath\" \
+              --header \"Authorization: Basic $authHeader\" \
+              -H 'Content-Type: application/json' \
+              -d '$body'"
+          
+            curl --fail -X PUT "http://$ELASTIC_ENDPOINT/_snapshot/$basePath" \
+            --header "Authorization: Basic $authHeader" \
+            -H 'Content-Type: application/json' \
+            -d "$body"
+            echo "Repository $basePath registered with MinIO using keystore credentials."
+          done
+      restartPolicy: OnFailure

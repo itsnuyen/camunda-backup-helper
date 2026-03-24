@@ -3,6 +3,8 @@
 ## Create a camunda cluster
 
 ```shell
+helm install minio oci://registry-1.docker.io/bitnamicharts/minio -f ./minio-local.yaml
+
 helm upgrade --install camunda camunda/camunda-platform --version 13.4.2 --values=./camunda-yaml/values-local.yaml
 ```
 

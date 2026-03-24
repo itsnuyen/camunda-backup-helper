@@ -22,7 +22,7 @@ func GetMergedBackupHistory() ([]domain.BackupStatusResponseMerged, error) {
 		return nil, fmt.Errorf("failed to get zeebe backup history: %w", err)
 	}
 
-	mergedHistory := mergeAndSortBackups(webappHistory, zeebeHistory)
+	mergedHistory, _ := mergeAndSortBackups(webappHistory, zeebeHistory)
 	mergedHistoryMerged := make([]domain.BackupStatusResponseMerged, len(mergedHistory))
 	for i, backup := range mergedHistory {
 		mergedHistoryMerged[i] = domain.BackupStatusResponseMerged{

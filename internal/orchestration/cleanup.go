@@ -11,9 +11,6 @@ import (
 )
 
 func Cleanup() ([]string, error) {
-	// Implement cleanup logic here, e.g., delete old backups, clear temporary files, etc.
-	// Return a list of cleaned items and any error that occurs during the cleanup process.
-
 	maxKeepItems, err := strconv.Atoi(config.KeepBackUpItems)
 	if err != nil {
 		return nil, fmt.Errorf("invalid value for KeepBackUpItems: %w", err)
@@ -31,7 +28,7 @@ func Cleanup() ([]string, error) {
 	}
 	log.Printf("Retrieved %d Camunda backup items", len(camundaBackups))
 
-	mergedBackups := mergeAndSortBackups(zeebeBackups, camundaBackups)
+	mergedBackups, corruptedOnes := mergeAndSortBackups(zeebeBackups, camundaBackups)
 	log.Printf("Merged and sorted total of %d backup items", len(mergedBackups))
 
 	if len(mergedBackups) <= maxKeepItems {
@@ -39,8 +36,14 @@ func Cleanup() ([]string, error) {
 		return []string{}, nil
 	}
 
-	itemsToDelete := mergedBackups[maxKeepItems:]
+	// TODO need to specify where to delete
+	for _, backup := range corruptedOnes {
+		DeleteBackup("backupRuntime", int64(backup.BackupId))
+		DeleteBackup("backupHistory", int64(backup.BackupId))
+	}
+	log.Printf("delete all faulty backup first %v", len(corruptedOnes))
 
+	itemsToDelete := mergedBackups[maxKeepItems:]
 	// ignore the first item and start with the second item, as the first item is the latest backup which we want to keep
 	for i := range itemsToDelete {
 		backup := itemsToDelete[i]
@@ -58,7 +61,7 @@ func Cleanup() ([]string, error) {
 	return deletedIds, nil
 }
 
-func mergeAndSortBackups(zeebeBackups, camundaBackups []domain.BackupStatusResponse) []domain.BackupStatusResponse {
+func mergeAndSortBackups(zeebeBackups, camundaBackups []domain.BackupStatusResponse) ([]domain.BackupStatusResponse, []domain.BackupStatusResponse) {
 	merged := append(zeebeBackups, camundaBackups...)
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].BackupId > merged[j].BackupId
@@ -67,18 +70,45 @@ func mergeAndSortBackups(zeebeBackups, camundaBackups []domain.BackupStatusRespo
 }
 
 // removeDuplicates removes duplicate backups based on BackupId
-func removeDuplicates(backups []domain.BackupStatusResponse) []domain.BackupStatusResponse {
-	seen := make(map[int64]bool)
+func removeDuplicates(backups []domain.BackupStatusResponse) ([]domain.BackupStatusResponse, []domain.BackupStatusResponse) {
+	seen := make(map[int64]int) // tracks count of each BackupId
 	result := []domain.BackupStatusResponse{}
+	trulyUnique := []domain.BackupStatusResponse{}
 
+	// First pass: count occurrences
 	for _, b := range backups {
-		if !seen[int64(b.BackupId)] {
-			seen[int64(b.BackupId)] = true
-			result = append(result, b)
+		seen[int64(b.BackupId)]++
+	}
+
+	// Second pass: build both lists
+	added := make(map[int64]bool)
+	for _, b := range backups {
+		id := int64(b.BackupId)
+
+		// Deduplicated list (first occurrence only)
+		requiredSeen := 2
+		if config.OptimizeBackup != "false" {
+			requiredSeen = 3
+		}
+
+		if !added[id] {
+			added[id] = true
+			if seen[id] == requiredSeen {
+				result = append(result, b)
+			}
+		}
+
+		// Truly unique list (only appears once)
+		if seen[id] == 1 {
+			trulyUnique = append(trulyUnique, b)
 		}
 	}
 
-	return result
+	for _, tru := range trulyUnique {
+		log.Printf("Truely unique ones with no duplication %v", tru.BackupId)
+	}
+
+	return result, trulyUnique
 }
 
 // DeleteBackup sends a DELETE request to remove a backup by ID

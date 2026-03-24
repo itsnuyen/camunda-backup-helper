@@ -6,28 +6,21 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/itsnuyen/camunda-backup-helper/internal/domain"
 	"github.com/itsnuyen/camunda-backup-helper/internal/orchestration"
 )
 
 func historyHandlerWebApps(w http.ResponseWriter, r *http.Request) {
 	historyData, err := orchestration.GetBackupHistory(false)
-	if err != nil {
-		log.Printf("Error performing backup: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to perform backup: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	responseJSON, err := json.Marshal(historyData)
-	if err != nil {
-		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(responseJSON)
+	handleResponseSavedBackups(w, err, historyData)
 }
 
 func historyHandlerZeebe(w http.ResponseWriter, r *http.Request) {
 	historyData, err := orchestration.GetBackupHistory(true)
+	handleResponseSavedBackups(w, err, historyData)
+}
+
+func handleResponseSavedBackups(w http.ResponseWriter, err error, historyData []domain.BackupStatusResponse) {
 	if err != nil {
 		log.Printf("Error performing backup: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to perform backup: %v", err), http.StatusInternalServerError)

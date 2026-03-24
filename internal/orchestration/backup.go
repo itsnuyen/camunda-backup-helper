@@ -2,29 +2,29 @@ package orchestration
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/itsnuyen/camunda-backup-helper/internal/domain"
 )
 
 func PerformBackup() (int64, error) {
-	// Placeholder for backup creation logic
-
-	// need to perform the backup here
-
 	backupId := generateBackupID()
-	
-	if err := CreateOptimizeBackup(backupId); err != nil {
-		return 0, fmt.Errorf("failed to create optimize backup: %w", err)
-	}
-	time.Sleep(time.Duration(2 * time.Second))
-	if err := WaitForOptimizeBackupCompletion(backupId); err != nil {
-		return 0, fmt.Errorf("optimize backup did not complete successfully: %w", err)
+	optimizeBackup, _ := strconv.ParseBool(config.OptimizeBackup)
+	if optimizeBackup {
+		if err := CreateOptimizeBackup(backupId); err != nil {
+			return 0, fmt.Errorf("failed to create optimize backup: %w", err)
+		}
+		time.Sleep(time.Duration(2 * time.Second))
+		if err := WaitForOptimizeBackupCompletion(backupId); err != nil {
+			return 0, fmt.Errorf("optimize backup did not complete successfully: %w", err)
+		}
 	}
 	if err := CreateBackup(backupId, false); err != nil {
 		return 0, fmt.Errorf("failed to create backup webapps: %w", err)
@@ -33,6 +33,7 @@ func PerformBackup() (int64, error) {
 	if err := WaitForBackupCamundaWebAppsCompletion(backupId); err != nil {
 		return 0, fmt.Errorf("backup webapps did not complete successfully: %w", err)
 	}
+	// Not cool this step because its seperated elasticsearch call
 	if err := CreateZeebeRecordsSnapshot(backupId, config.SnapshotZeebeRepo); err != nil {
 		return 0, fmt.Errorf("failed to create Zeebe records snapshot: %w", err)
 	}
@@ -79,7 +80,7 @@ func GetBackupHistoryStatus(backupId int64) (*domain.BackupStatusResponse, error
 // WaitForBackupCamundaWebAppsCompletion polls the backup history status until it reaches COMPLETED state
 // Corresponds to: while [[ "$(curl -s ... | jq -r .state)" != "COMPLETED" ]]; do echo "Waiting..."; sleep 5; done
 func WaitForBackupCamundaWebAppsCompletion(backupId int64) error {
-	fmt.Printf("Waiting for backup webapps %d to complete...\n", backupId)
+	log.Printf("Waiting for backup webapps %d to complete...\n", backupId)
 
 	for {
 		status, err := GetBackupHistoryStatus(backupId)
@@ -88,7 +89,7 @@ func WaitForBackupCamundaWebAppsCompletion(backupId int64) error {
 		}
 
 		if status.State == "COMPLETED" {
-			fmt.Printf("Finished backup history with ID %d\n", backupId)
+			log.Printf("Finished backup history with ID %d\n", backupId)
 			return nil
 		}
 
@@ -96,7 +97,6 @@ func WaitForBackupCamundaWebAppsCompletion(backupId int64) error {
 			return fmt.Errorf("backup failed with reason: %v", status)
 		}
 
-		fmt.Println("Waiting...")
 		time.Sleep(5 * time.Second)
 	}
 }
@@ -104,10 +104,10 @@ func WaitForBackupCamundaWebAppsCompletion(backupId int64) error {
 // CreateZeebeRecordsSnapshot creates an Elasticsearch snapshot for Zeebe records
 // Corresponds to: curl -XPUT "$ELASTIC_ENDPOINT/_snapshot/$ELASTIC_SNAPSHOT_REPOSITORY/camunda_zeebe_records_backup_$BACKUP_ID?wait_for_completion=true"
 func CreateZeebeRecordsSnapshot(backupId int64, snapshotRepository string) error {
+	log.Printf("Create zeebe snapshots for in secandary storage %d and snapshot registry %s", backupId, snapshotRepository)
 	snapshotName := fmt.Sprintf("camunda_zeebe_records_backup_%d", backupId)
 	url := fmt.Sprintf("%s/_snapshot/%s/%s?wait_for_completion=true",
 		config.SecondarystorageUrl, snapshotRepository, snapshotName)
-
 	// Create request body with indices pattern and feature_states
 	requestBody := map[string]interface{}{
 		"indices":        "zeebe-record*",
@@ -123,33 +123,45 @@ func CreateZeebeRecordsSnapshot(backupId int64, snapshotRepository string) error
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-
+	// Basic Auth Header for ElasticSearch
+	if config.ElasticPassword != "" {
+		basicAuth := base64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:%s", config.ElasticUsername, config.ElasticPassword)),
+		)
+		req.Header.Set("Authorization", "Basic "+basicAuth)
+	}
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to create Zeebe records snapshot: %w", err)
+		return fmt.Errorf("failed to create Zeebe records snapshot: %w \n", err)
 	}
 	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
 
+	log.Printf(string(bodyBytes))
+
+	// TODO create a real object on error
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("request failed with status: %d", resp.StatusCode)
 	}
 
-	fmt.Printf("Successfully created Zeebe records snapshot: %s\n", snapshotName)
+	log.Printf("Successfully created Zeebe records snapshot: %s ", snapshotName)
 	return nil
 }
 
 // CreateBackup initiates a runtime backup operation with the given backup ID
 // Corresponds to: curl -XPOST "$ORCHESTRATION_CLUSTER_MANAGEMENT_API/actuator/backupRuntime" -d '{"backupId": $BACKUP_ID}'
 func CreateBackup(backupId int64, runtimeBackup bool) error {
-	log.Printf("Orchestration Url: %s\n", config.OrchestrationUrl)
 	url := ""
 	if runtimeBackup {
 		url = fmt.Sprintf("%s/actuator/backupRuntime", config.OrchestrationUrl)
-		log.Printf("Creating backup runtime with ID %d...\n for url: %s", backupId, url)
+		log.Printf("Creating runtime backup with ID %d. [for url: %s]", backupId, url)
 	} else {
 		url = fmt.Sprintf("%s/actuator/backupHistory", config.OrchestrationUrl)
-		log.Printf("Creating backup history with ID %d...\n for url: %s", backupId, url)
+		log.Printf("Creating webapp backup history with ID %d. [for url: %s]", backupId, url)
 	}
 
 	// Create request body with backupId
@@ -168,7 +180,7 @@ func CreateBackup(backupId int64, runtimeBackup bool) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to create backup runtime: %w", err)
+		return fmt.Errorf("failed to create runtime  backup: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -210,43 +222,40 @@ func GetBackupRuntimeStatus(backupId int64) (*domain.BackupStatusResponse, error
 // WaitForBackupRuntimeCompletion polls the backup runtime status until it reaches COMPLETED state
 // Corresponds to: while [[ "$(curl -s ... | jq -r .state)" != "COMPLETED" ]]; do echo "Waiting..."; sleep 5; done
 func WaitForBackupRuntimeCompletion(backupId int64) error {
-	fmt.Printf("Waiting for backup runtime %d to complete...\n", backupId)
+	log.Printf("Waiting for runtime backup %d to complete...\n", backupId)
 
 	for {
 		status, err := GetBackupRuntimeStatus(backupId)
 		if err != nil {
-			return fmt.Errorf("failed to check backup runtime status: %w", err)
+			return fmt.Errorf("failed to check runtime backup status: %w", err)
 		}
 
 		if status.State == "COMPLETED" {
-			fmt.Printf("Finished backup runtime with ID %d\n", backupId)
+			log.Printf("Finished runtime backup with ID %d\n", backupId)
 			return nil
 		}
 
 		if status.State == "FAILED" {
-			return fmt.Errorf("backup runtime failed with reason: %v", status)
+			return fmt.Errorf("runtime backup failed with reason: %v", status)
 		}
-
-		fmt.Println("Waiting...")
 		time.Sleep(5 * time.Second)
 	}
 }
 
-// generateBackupID creates a new backup ID using Unix timestamp
-// Corresponds to: export BACKUP_ID=$(date +%s)
 func generateBackupID() int64 {
 	return time.Now().Unix()
 }
 
 func PauseZeebeExport() error {
-	return handleZeebeExportSoftPause(true)
-}
-
-func ResumeZeebeExport() error {
 	return handleZeebeExportSoftPause(false)
 }
 
+func ResumeZeebeExport() error {
+	return handleZeebeExportSoftPause(true)
+}
+
 func handleZeebeExportSoftPause(zeebeExport bool) error {
+	log.Printf("Softpause Exporter %v", zeebeExport)
 	url := fmt.Sprintf("%s/actuator/exporting/pause?soft=%t", config.OrchestrationUrl, zeebeExport)
 
 	req, err := http.NewRequest(http.MethodPost, url, nil)

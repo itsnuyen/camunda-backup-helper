@@ -53,6 +53,10 @@ func GetOptimizeBackupStatus(backupId int64) (*domain.BackupStatusResponse, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get optimize backup status: %w", err)
 	}
+	return handleBackupResponseStatus(resp, err)
+}
+
+func handleBackupResponseStatus(resp *http.Response, err error) (*domain.BackupStatusResponse, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
